@@ -1,55 +1,157 @@
-name: Build and Upload AyuGram Private
+name: Build AyuGram Private (5-Stage with Next-Build Cache)
 
 on:
   workflow_dispatch: 
 
 jobs:
-  build:
+  # ==========================================
+  # 1st: Clone/Pull & Prepare Part 1
+  # ==========================================
+  job1_clone_prepare:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: System Space Check (Before)
-        run: df -h
+      - name: Install Poetry
+        run: pipx install poetry
+      
+      # NEXT BUILD CACHE 
+      - name: Restore Previous Full Cache
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-full-${{ github.run_id }}
+          restore-keys: |
+            tdesktop-full-
+            
+      - name: Clone or Pull AyuGram & Apply Patches
+        run: |
+          if [ -d "tdesktop/.git" ]; then
+            echo "Purana cache mil gaya! Update kar rahe hain..."
+            cd tdesktop
+            git pull
+            git submodule update --init --recursive
+            cd ..
+          else
+            echo "Cache nahi mila! Naya clone kar rahe hain..."
+            git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
+          fi
+          # Patches apply karna (agar pehle se applied hain toh error ignore karega)
+          patch -p1 -d tdesktop < Patches/build.patch || true
+          patch -p1 -d tdesktop < Patches/prepare.patch || true
+          
+      - name: Prepare Script (Part 1)
+        env:
+          PREPARE_PART: "1"
+        run: ./tdesktop/Telegram/build/prepare/linux.sh
 
+      - name: Save Job 1 Cache (For Job 2)
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-job1-${{ github.run_id }}
+
+  # ==========================================
+  # 2nd: Prepare Part 2 (Safety/Backup)
+  # ==========================================
+  job2_prepare_safety:
+    needs: job1_clone_prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Restore Job 1 Cache
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-job1-${{ github.run_id }}
+          
+      - name: Prepare Script (Part 2 - Docker Build)
+        env:
+          PREPARE_PART: "2"
+        run: ./tdesktop/Telegram/build/prepare/linux.sh
+
+      - name: Save Job 2 Cache (For Job 3)
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-job2-${{ github.run_id }}
+
+  # ==========================================
+  # 3rd: Build Part 1
+  # ==========================================
+  job3_build_1:
+    needs: job2_prepare_safety
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore Job 2 Cache
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-job2-${{ github.run_id }}
+          
+      - name: Run Build Part 1
+        env:
+          BUILD_PART: "1"
+        run: |
+          cd tdesktop
+          docker run --rm -u $(id -u) -v "$PWD:/usr/src/tdesktop" -e BUILD_PART=1 ghcr.io/telegramdesktop/tdesktop/centos_env:latest /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
+          
+      - name: Save Job 3 Cache (For Job 4)
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-job3-${{ github.run_id }}
+
+  # ==========================================
+  # 4th: Build Part 2
+  # ==========================================
+  job4_build_2:
+    needs: job3_build_1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore Job 3 Cache
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-job3-${{ github.run_id }}
+          
+      - name: Run Build Part 2
+        env:
+          BUILD_PART: "2"
+        run: |
+          cd tdesktop
+          docker run --rm -u $(id -u) -v "$PWD:/usr/src/tdesktop" -e BUILD_PART=2 ghcr.io/telegramdesktop/tdesktop/centos_env:latest /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
+          
+      - name: Save FULL Cache (For NEXT Build Run)
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-full-${{ github.run_id }}
+
+  # ==========================================
+  # 5th: Upload
+  # ==========================================
+  job5_upload:
+    needs: job4_build_2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore FULL Cache (For Upload)
+        uses: actions/cache@v4
+        with:
+          path: tdesktop
+          key: tdesktop-full-${{ github.run_id }}
+          
       - name: Install & Setup Rclone
         run: |
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
-
-      - name: Install Prerequisites (Poetry)
-        run: |
-          pipx install poetry
-          poetry --version
-          docker buildx version
-          
-      - name: Clone AyuGram & Prepare
-        run: |
-          git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
-          ./tdesktop/Telegram/build/prepare/linux.sh
-
-      - name: Build AyuGram via Docker
-        run: |
-          docker run --rm \
-            -u $(id -u) \
-            -v "$PWD/tdesktop:/usr/src/tdesktop" \
-            ghcr.io/telegramdesktop/tdesktop/centos_env:latest \
-            /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
-            -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} \
-            -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
           
       - name: Upload to Google Drive
         run: |
           FILE_PATH=$(find tdesktop/out/Release/deploy -name "*.tar.xz" | head -n 1)
-          echo "Check Size:"
-          du -h "$FILE_PATH"
           rclone copy "$FILE_PATH" gdrive:AyuGramBuilds/ -v
           
       - name: Cleanup
         if: always()
-        run: |
-          rm -rf tdesktop
-          rm -rf ayugram-linux.tar.xz
-          rm -rf ~/.config/rclone
-          echo "Everythings Burns"
-          df -h
+        run: rm -rf ~/.config/rclone

@@ -1,0 +1,18 @@
+--- a/Telegram/build/build.sh
++++ b/Telegram/build/build.sh
+@@ -114,8 +114,14 @@
+     fi
+   fi
+ 
+-  ./build/docker/centos_env/run.sh /usr/src/tdesktop/Telegram/build/docker/build.sh
++  # Split logic injected via Patch
++  if [ "$BUILD_PART" == "1" ]; then
++    echo "Running Build Part 1 (Cache Mode)..."
++    ./build/docker/centos_env/run.sh /usr/src/tdesktop/Telegram/build/docker/build.sh --target tgcalls
++  else
++    echo "Running Build Part 2 (Final Build)..."
++    ./build/docker/centos_env/run.sh /usr/src/tdesktop/Telegram/build/docker/build.sh
++  fi
+ 
+   echo "Copying from docker result folder."
+   cp "$ReleasePath/root/$BinaryName" "$ReleasePath/$BinaryName"

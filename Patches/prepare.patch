@@ -1,0 +1,13 @@
+--- a/Telegram/build/prepare/linux.sh
++++ b/Telegram/build/prepare/linux.sh
+@@ -6,4 +6,9 @@
+ 
+ cd $FullScriptPath/../docker/centos_env
+ poetry install
+-poetry run gen_dockerfile | DOCKER_BUILDKIT=1 docker build -t tdesktop:centos_env -
++if [ "$PREPARE_PART" == "1" ]; then
++  poetry run gen_dockerfile > Dockerfile.gen
++else
++  cat Dockerfile.gen | DOCKER_BUILDKIT=1 docker build -t tdesktop:centos_env -
++fi
+ cd $FullExecPath
