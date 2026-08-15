@@ -37,16 +37,13 @@ jobs:
             /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
             -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} \
             -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
-            
-      - name: Compress Build to .tar.xz
-        run: |
-          tar -cJf ayugram-linux.tar.xz -C tdesktop/out/ .
-          echo "Compression done. Size is:"
-          du -h ayugram-linux.tar.xz
           
       - name: Upload to Google Drive
         run: |
-          rclone copy ayugram-linux.tar.xz gdrive:AyuGramBuilds/ -v
+          FILE_PATH=$(find tdesktop/out/Release/deploy -name "*.tar.xz" | head -n 1)
+          echo "Check Size:"
+          du -h "$FILE_PATH"
+          rclone copy "$FILE_PATH" gdrive:AyuGramBuilds/ -v
           
       - name: Cleanup
         if: always()
