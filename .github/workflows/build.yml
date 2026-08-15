@@ -10,6 +10,9 @@ jobs:
   job1_clone_prepare:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Repo (For Patches)
+        uses: actions/checkout@v4
+
       - name: Install Poetry
         run: pipx install poetry
       
