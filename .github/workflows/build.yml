@@ -1,0 +1,52 @@
+name: Build and Upload AyuGram Private
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: System Space Check (Before)
+        run: df -h
+
+      - name: Install & Setup Rclone
+        run: |
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
+          
+      - name: Clone AyuGram & Prepare
+        run: |
+          git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
+          ./tdesktop/Telegram/build/prepare/linux.sh
+
+      - name: Build AyuGram via Docker
+        run: |
+          docker run --rm \
+            -u $(id -u) \
+            -v "$PWD/tdesktop:/usr/src/tdesktop" \
+            ghcr.io/telegramdesktop/tdesktop/centos_env:latest \
+            /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} \
+            -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
+            
+      - name: Compress Build to .tar.xz
+        run: |
+          tar -cJf ayugram-linux.tar.xz -C tdesktop/out/ .
+          echo "Compression done. Size is:"
+          du -h ayugram-linux.tar.xz
+          
+      - name: Upload to Google Drive
+        run: |
+          rclone copy ayugram-linux.tar.xz gdrive:AyuGramBuilds/ -v
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf tdesktop
+          rm -rf ayugram-linux.tar.xz
+          rm -rf ~/.config/rclone
+          echo "Everythings Burns"
+          df -h
