@@ -90,15 +90,25 @@ jobs:
           save-always: true
 
       - name: Setup Rclone & Upload
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_DATA }}
         run: |
           sudo apt update && sudo apt install rclone -y
           mkdir -p ~/.config/rclone
-          echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
           
+          # Ab Bash tere quotes ko haath bhi nahi lagayega
+          echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          
+          echo "Packing AyuGram..."
           tar -cf ayugram-linux.tar -C tdesktop/out/Release/ AyuGram
+          
+          echo "Compressing..."
           xz -z -v -9 ayugram-linux.tar
+          
+          echo "File Size:"
           du -h ayugram-linux.tar.xz
 
+          echo "Uploading..."
           rclone copy ayugram-linux.tar.xz gdrive:AyuGramBuilds/ -v
           
       - name: Cleanup
