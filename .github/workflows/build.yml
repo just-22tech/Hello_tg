@@ -91,7 +91,7 @@ jobs:
 
       - name: Setup Rclone & Upload
         run: |
-          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          sudo apt update && sudo apt install rclone -y
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
           
