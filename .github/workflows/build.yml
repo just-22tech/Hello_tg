@@ -1,26 +1,23 @@
-name: Build AyuGram Private (Split Build for 5hr)
+name: Build AyuGram Private
 
 on:
   workflow_dispatch: 
 
 jobs:
-  # ==========================================
-  # 1st: Clone & Build Part 1
-  # ==========================================
-  job1_build_part1:
+  build_and_upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Free Disk Space (Bohut Zaroori)
+      - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo apt-get clean
           df -h
 
-      - name: Checkout Repo (For patch.py)
+      - name: Checkout Repo
         uses: actions/checkout@v4
       
-      - name: Restore Previous Cache
-        uses: actions/cache@v4
+      - name: Restore Cache
+        uses: actions/cache/restore@v4
         with:
           path: tdesktop
           key: tdesktop-full-${{ github.run_id }}
@@ -30,64 +27,33 @@ jobs:
       - name: Clone or Pull AyuGram
         run: |
           if [ -d "tdesktop/.git" ]; then
-            echo "Cache mil gaya! Update ho raha hai..."
+            echo "Cache found! Updating repository..."
             cd tdesktop
             git pull
             git submodule update --init --recursive
             cd ..
           else
-            echo "Cache nahi mila! Fresh clone..."
+            echo "Cache not found! Cloning fresh repository..."
             git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
           fi
-          
-      - name: Apply Python Patcher
-        run: python3 Patches/patch.py
 
-      - name: Run Build Part 1
-        env:
-          BUILD_PART: "1"
+      - name: Run Build
         run: |
           cd tdesktop
-          docker run --rm -u $(id -u) -v "$PWD:/usr/src/tdesktop" -e BUILD_PART=1 ghcr.io/telegramdesktop/tdesktop/centos_env:latest /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
+          docker run --rm \
+            -u $(id -u) \
+            -v "$PWD:/usr/src/tdesktop" \
+            ghcr.io/telegramdesktop/tdesktop/centos_env:latest \
+            /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} \
+            -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
 
-      - name: Save Job 1 Cache (For Part 2)
-        uses: actions/cache@v4
-        with:
-          path: tdesktop
-          key: tdesktop-part1-${{ github.run_id }}
-          save-always: true # Agar time out bhi hua, toh cache bacha lega
-
-  # ==========================================
-  # 2nd: Build Part 2 & Upload
-  # ==========================================
-  job2_build_part2:
-    needs: job1_build_part1
-    runs-on: ubuntu-latest
-    steps:
-      - name: Free Disk Space (Bohut Zaroori)
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo apt-get clean
-
-      - name: Restore Job 1 Cache
-        uses: actions/cache@v4
-        with:
-          path: tdesktop
-          key: tdesktop-part1-${{ github.run_id }}
-          
-      - name: Run Build Part 2
-        env:
-          BUILD_PART: "2"
-        run: |
-          cd tdesktop
-          docker run --rm -u $(id -u) -v "$PWD:/usr/src/tdesktop" -e BUILD_PART=2 ghcr.io/telegramdesktop/tdesktop/centos_env:latest /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
-
-      - name: Save FULL Cache (For NEXT Time)
-        uses: actions/cache@v4
+      - name: Save Cache
+        uses: actions/cache/save@v4
+        if: always()
         with:
           path: tdesktop
           key: tdesktop-full-${{ github.run_id }}
-          save-always: true
 
       - name: Setup Rclone & Upload
         env:
@@ -96,20 +62,20 @@ jobs:
           sudo apt update && sudo apt install rclone -y
           mkdir -p ~/.config/rclone
           
-          # Ab Bash tere quotes ko haath bhi nahi lagayega
           echo "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
           
-          echo "Packing AyuGram..."
-          tar -cf ayugram-linux.tar -C tdesktop/out/Release/ AyuGram
+          cd tdesktop
+          VERSION=$(git describe --tags --always)
+          cd ..
           
-          echo "Compressing..."
-          xz -z -v -9 ayugram-linux.tar
+          echo "Packing only the final executable..."
+          tar -cJf ayugram-linux-${VERSION}.tar.xz -C tdesktop/out/Release/ AyuGram
           
-          echo "File Size:"
-          du -h ayugram-linux.tar.xz
+          echo "Final compressed file size:"
+          du -h ayugram-linux-${VERSION}.tar.xz
 
-          echo "Uploading..."
-          rclone copy ayugram-linux.tar.xz gdrive:AyuGramBuilds/ -v
+          echo "Starting upload to Google Drive..."
+          rclone copy ayugram-linux-${VERSION}.tar.xz gdrive:AyuGramBuilds/ -v
           
       - name: Cleanup
         if: always()
