@@ -38,21 +38,8 @@ jobs:
             git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
           fi
           
-          python3 -c '
-          # 1. Modify prepare script
-          with open("tdesktop/Telegram/build/prepare/linux.sh", "r") as f: d1 = f.read()
-          old1 = "poetry run gen_dockerfile | DOCKER_BUILDKIT=1 docker build -t tdesktop:centos_env -"
-          new1 = "if [ \"$PREPARE_PART\" == \"1\" ]; then\n  poetry run gen_dockerfile > Dockerfile.gen\nelse\n  cat Dockerfile.gen | DOCKER_BUILDKIT=1 docker build -t tdesktop:centos_env -\nfi"
-          with open("tdesktop/Telegram/build/prepare/linux.sh", "w") as f: f.write(d1.replace(old1, new1))
-
-          # 2. Modify build script
-          with open("tdesktop/Telegram/build/build.sh", "r") as f: d2 = f.read()
-          old2 = "./build/docker/centos_env/run.sh /usr/src/tdesktop/Telegram/build/docker/build.sh"
-          new2 = "if [ \"$BUILD_PART\" == \"1\" ]; then\n    echo \"Running Build Part 1...\"\n    ./build/docker/centos_env/run.sh /usr/src/tdesktop/Telegram/build/docker/build.sh --target tgcalls\n  else\n    echo \"Running Build Part 2...\"\n    ./build/docker/centos_env/run.sh /usr/src/tdesktop/Telegram/build/docker/build.sh\n  fi"
-          with open("tdesktop/Telegram/build/build.sh", "w") as f: f.write(d2.replace(old2, new2))
-          
-          print("Done Edits Files")
-          '
+      - name: Apply Python Patcher
+        run: python3 Patches/patch.py
 
       - name: Prepare Script (Part 1)
         env:
@@ -165,8 +152,10 @@ jobs:
           
       - name: Upload to Google Drive
         run: |
-          FILE_PATH=$(find tdesktop/out/Release/deploy -name "*.tar.xz" | head -n 1)
-          rclone copy "$FILE_PATH" gdrive:AyuGramBuilds/ -v
+          tar -cJf ayugram-linux.tar.xz -C tdesktop/out/ .
+          du -h ayugram-linux.tar.xz
+
+          rclone copy ayugram-linux.tar.xz gdrive:AyuGramBuilds/ -v
           
       - name: Cleanup
         if: always()
