@@ -1,19 +1,25 @@
-name: Build AyuGram Private
+name: Build AyuGram Private (Split Build for 5hr)
 
 on:
   workflow_dispatch: 
 
 jobs:
   # ==========================================
-  # 1st: Clone/Pull & Patch
+  # 1st: Clone & Build Part 1
   # ==========================================
-  job1_clone:
+  job1_build_part1:
     runs-on: ubuntu-latest
     steps:
+      - name: Free Disk Space (Bohut Zaroori)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          df -h
+
       - name: Checkout Repo (For patch.py)
         uses: actions/checkout@v4
       
-      - name: Restore Previous Full Cache
+      - name: Restore Previous Cache
         uses: actions/cache@v4
         with:
           path: tdesktop
@@ -24,63 +30,50 @@ jobs:
       - name: Clone or Pull AyuGram
         run: |
           if [ -d "tdesktop/.git" ]; then
-            echo "Found Cache! Updating..."
+            echo "Cache mil gaya! Update ho raha hai..."
             cd tdesktop
             git pull
             git submodule update --init --recursive
             cd ..
           else
-            echo "No Cache! Cloning fresh..."
+            echo "Cache nahi mila! Fresh clone..."
             git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
           fi
           
-      - name: Apply Python Patcher (Only for build.sh)
+      - name: Apply Python Patcher
         run: python3 Patches/patch.py
 
-      - name: Save Job 1 Cache (For Build 1)
-        uses: actions/cache@v4
-        with:
-          path: tdesktop
-          key: tdesktop-job1-${{ github.run_id }}
-
-  # ==========================================
-  # 2nd: Build Part 1
-  # ==========================================
-  job2_build_1:
-    needs: job1_clone
-    runs-on: ubuntu-latest
-    steps:
-      - name: Restore Job 1 Cache
-        uses: actions/cache@v4
-        with:
-          path: tdesktop
-          key: tdesktop-job1-${{ github.run_id }}
-          
       - name: Run Build Part 1
         env:
           BUILD_PART: "1"
         run: |
           cd tdesktop
           docker run --rm -u $(id -u) -v "$PWD:/usr/src/tdesktop" -e BUILD_PART=1 ghcr.io/telegramdesktop/tdesktop/centos_env:latest /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
-          
-      - name: Save Job 2 Cache (For Build 2)
+
+      - name: Save Job 1 Cache (For Part 2)
         uses: actions/cache@v4
         with:
           path: tdesktop
-          key: tdesktop-job2-${{ github.run_id }}
+          key: tdesktop-part1-${{ github.run_id }}
+          save-always: true # Agar time out bhi hua, toh cache bacha lega
 
   # ==========================================
-  # 3rd: Build Part 2
+  # 2nd: Build Part 2 & Upload
   # ==========================================
-  job3_build_2:
-    needs: job2_build_1
+  job2_build_part2:
+    needs: job1_build_part1
     runs-on: ubuntu-latest
     steps:
-      - name: Restore Job 2 Cache
+      - name: Free Disk Space (Bohut Zaroori)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+
+      - name: Restore Job 1 Cache
         uses: actions/cache@v4
         with:
           path: tdesktop
-          key: tdesktop-job2-${{ github.run_id }}
+          key: tdesktop-part1-${{ github.run_id }}
           
       - name: Run Build Part 2
         env:
@@ -88,34 +81,20 @@ jobs:
         run: |
           cd tdesktop
           docker run --rm -u $(id -u) -v "$PWD:/usr/src/tdesktop" -e BUILD_PART=2 ghcr.io/telegramdesktop/tdesktop/centos_env:latest /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
-          
-      - name: Save FULL Cache (For NEXT Build Run)
-        uses: actions/cache@v4
-        with:
-          path: tdesktop
-          key: tdesktop-full-${{ github.run_id }}
 
-  # ==========================================
-  # 4th: Upload
-  # ==========================================
-  job4_upload:
-    needs: job3_build_2
-    runs-on: ubuntu-latest
-    steps:
-      - name: Restore FULL Cache (For Upload)
+      - name: Save FULL Cache (For NEXT Time)
         uses: actions/cache@v4
         with:
           path: tdesktop
           key: tdesktop-full-${{ github.run_id }}
-          
-      - name: Install & Setup Rclone
+          save-always: true
+
+      - name: Setup Rclone & Upload
         run: |
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
           
-      - name: Compress & Upload to Google Drive
-        run: |
           tar -cJf ayugram-linux.tar.xz -C tdesktop/out/ .
           du -h ayugram-linux.tar.xz
 
