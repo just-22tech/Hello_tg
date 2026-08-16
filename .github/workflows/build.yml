@@ -95,7 +95,8 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
           
-          tar -cJf ayugram-linux.tar.xz -C tdesktop/out/ .
+          tar -cf ayugram-linux.tar -C tdesktop/out/Release/ AyuGram
+          xz -z -v -9 ayugram-linux.tar
           du -h ayugram-linux.tar.xz
 
           rclone copy ayugram-linux.tar.xz gdrive:AyuGramBuilds/ -v
