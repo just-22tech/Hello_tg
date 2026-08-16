@@ -1,22 +1,18 @@
-name: Build AyuGram Private (5-Stage with Next-Build Cache)
+name: Build AyuGram Private
 
 on:
   workflow_dispatch: 
 
 jobs:
   # ==========================================
-  # 1st: Clone/Pull & Prepare Part 1
+  # 1st: Clone/Pull & Patch
   # ==========================================
-  job1_clone_prepare:
+  job1_clone:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repo (For Patches)
+      - name: Checkout Repo (For patch.py)
         uses: actions/checkout@v4
-
-      - name: Install Poetry
-        run: pipx install poetry
       
-      # NEXT BUILD CACHE 
       - name: Restore Previous Full Cache
         uses: actions/cache@v4
         with:
@@ -25,72 +21,40 @@ jobs:
           restore-keys: |
             tdesktop-full-
             
-      - name: Clone or Pull AyuGram & Apply Mods
+      - name: Clone or Pull AyuGram
         run: |
           if [ -d "tdesktop/.git" ]; then
-            echo "Found Cache"
+            echo "Found Cache! Updating..."
             cd tdesktop
             git pull
             git submodule update --init --recursive
             cd ..
           else
-            echo "Not Found Cache"
+            echo "No Cache! Cloning fresh..."
             git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
           fi
           
-      - name: Apply Python Patcher
+      - name: Apply Python Patcher (Only for build.sh)
         run: python3 Patches/patch.py
 
-      - name: Prepare Script (Part 1)
-        env:
-          PREPARE_PART: "1"
-        run: ./tdesktop/Telegram/build/prepare/linux.sh
-
-      - name: Save Job 1 Cache (For Job 2)
+      - name: Save Job 1 Cache (For Build 1)
         uses: actions/cache@v4
         with:
           path: tdesktop
           key: tdesktop-job1-${{ github.run_id }}
 
   # ==========================================
-  # 2nd: Prepare Part 2 (Safety/Backup)
+  # 2nd: Build Part 1
   # ==========================================
-  job2_prepare_safety:
-    needs: job1_clone_prepare
+  job2_build_1:
+    needs: job1_clone
     runs-on: ubuntu-latest
     steps:
-      - name: Install Poetry
-        run: pipx install poetry
-
       - name: Restore Job 1 Cache
         uses: actions/cache@v4
         with:
           path: tdesktop
           key: tdesktop-job1-${{ github.run_id }}
-          
-      - name: Prepare Script (Part 2 - Docker Build)
-        env:
-          PREPARE_PART: "2"
-        run: ./tdesktop/Telegram/build/prepare/linux.sh
-
-      - name: Save Job 2 Cache (For Job 3)
-        uses: actions/cache@v4
-        with:
-          path: tdesktop
-          key: tdesktop-job2-${{ github.run_id }}
-
-  # ==========================================
-  # 3rd: Build Part 1
-  # ==========================================
-  job3_build_1:
-    needs: job2_prepare_safety
-    runs-on: ubuntu-latest
-    steps:
-      - name: Restore Job 2 Cache
-        uses: actions/cache@v4
-        with:
-          path: tdesktop
-          key: tdesktop-job2-${{ github.run_id }}
           
       - name: Run Build Part 1
         env:
@@ -99,24 +63,24 @@ jobs:
           cd tdesktop
           docker run --rm -u $(id -u) -v "$PWD:/usr/src/tdesktop" -e BUILD_PART=1 ghcr.io/telegramdesktop/tdesktop/centos_env:latest /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh -D TDESKTOP_API_ID=${{ secrets.MY_API_ID }} -D TDESKTOP_API_HASH=${{ secrets.MY_API_HASH }}
           
-      - name: Save Job 3 Cache (For Job 4)
+      - name: Save Job 2 Cache (For Build 2)
         uses: actions/cache@v4
         with:
           path: tdesktop
-          key: tdesktop-job3-${{ github.run_id }}
+          key: tdesktop-job2-${{ github.run_id }}
 
   # ==========================================
-  # 4th: Build Part 2
+  # 3rd: Build Part 2
   # ==========================================
-  job4_build_2:
-    needs: job3_build_1
+  job3_build_2:
+    needs: job2_build_1
     runs-on: ubuntu-latest
     steps:
-      - name: Restore Job 3 Cache
+      - name: Restore Job 2 Cache
         uses: actions/cache@v4
         with:
           path: tdesktop
-          key: tdesktop-job3-${{ github.run_id }}
+          key: tdesktop-job2-${{ github.run_id }}
           
       - name: Run Build Part 2
         env:
@@ -132,10 +96,10 @@ jobs:
           key: tdesktop-full-${{ github.run_id }}
 
   # ==========================================
-  # 5th: Upload
+  # 4th: Upload
   # ==========================================
-  job5_upload:
-    needs: job4_build_2
+  job4_upload:
+    needs: job3_build_2
     runs-on: ubuntu-latest
     steps:
       - name: Restore FULL Cache (For Upload)
@@ -150,7 +114,7 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
           
-      - name: Upload to Google Drive
+      - name: Compress & Upload to Google Drive
         run: |
           tar -cJf ayugram-linux.tar.xz -C tdesktop/out/ .
           du -h ayugram-linux.tar.xz

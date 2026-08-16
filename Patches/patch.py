@@ -20,17 +20,7 @@ def patch_file(filepath, old_text, new_text):
     print(f"Successfully patched: {filepath}")
 
 def main():
-    # 1. Patch prepare script
-    prepare_path = "tdesktop/Telegram/build/prepare/linux.sh"
-    old_prep = "poetry run gen_dockerfile | DOCKER_BUILDKIT=1 docker build -t tdesktop:centos_env -"
-    new_prep = """if [ "$PREPARE_PART" == "1" ]; then
-  poetry run gen_dockerfile > Dockerfile.gen
-else
-  cat Dockerfile.gen | DOCKER_BUILDKIT=1 docker build -t tdesktop:centos_env -
-fi"""
-    patch_file(prepare_path, old_prep, new_prep)
-
-    # 2. Patch build script
+    # Only patching build script now
     build_path = "tdesktop/Telegram/build/build.sh"
     old_build = "./build/docker/centos_env/run.sh /usr/src/tdesktop/Telegram/build/docker/build.sh"
     new_build = """if [ "$BUILD_PART" == "1" ]; then
